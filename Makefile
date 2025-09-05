@@ -1,7 +1,7 @@
 # Makefile Template for Digital Design Projects
 # Family-based architecture with iCE40 implementation
 
-PROJECT = PROJECT_NAME_PLACEHOLDER
+PROJECT = FIFO_lib
 TOP_MODULE ?= adder
 TESTBENCH ?= adder_tb
 
@@ -353,7 +353,14 @@ ifdef YOSYS
 	@echo "Auto-configured: Family=$(FPGA_FAMILY), Device=$(FPGA_DEVICE), Package=$(FPGA_PACKAGE)"
 	@echo "Reading source files and synthesizing..."
 	@echo "# Auto-generated Yosys script for iCE40" > $(SYNTH_DIR)/yosys_script_ice40.ys
-	@sed '/# Testbench Files/q' $(FILELIST) | grep '^/' | sed 's/^/read_verilog /' >> $(SYNTH_DIR)/yosys_script_ice40.ys
+	@sed '/# Testbench Files/q' $(FILELIST) | grep '^/' | while read file; do \
+		case "$$file" in \
+			*.sv) echo "read_verilog -sv $$file" ;; \
+			*.v)  echo "read_verilog $$file" ;; \
+			*.vhd|*.vhdl) echo "read_vhdl $$file" ;; \
+			*) echo "# Unsupported file type: $$file" ;; \
+		esac; \
+	done >> $(SYNTH_DIR)/yosys_script_ice40.ys
 	@echo "hierarchy -check -top $(TOP_MODULE)" >> $(SYNTH_DIR)/yosys_script_ice40.ys
 	@echo "synth_ice40 -top $(TOP_MODULE) -json $(ICE40_JSON)" >> $(SYNTH_DIR)/yosys_script_ice40.ys
 	@echo "stat -top $(TOP_MODULE)" >> $(SYNTH_DIR)/yosys_script_ice40.ys

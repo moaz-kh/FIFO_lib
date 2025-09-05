@@ -11,9 +11,9 @@
 `timescale 1ns / 1ps
 
 module sync_fifo #(
-    parameter int WIDTH = 32,           // Data width in bits
-    parameter int DEPTH = 16,           // FIFO depth (must be power of 2)
-    parameter int ADDR_WIDTH = $clog2(DEPTH)  // Address width automatically calculated
+    parameter WIDTH = 8,            // Data width in bits  
+    parameter DEPTH = 16,           // FIFO depth (must be power of 2)
+    parameter ADDR_WIDTH = $clog2(DEPTH)  // Address width automatically calculated
 )(
     // Clock and reset
     input  logic                    clk,
@@ -124,6 +124,8 @@ module sync_fifo #(
             else $error("Count out of bounds: %0d at time %0t", count, $time);
     `endif
     
+    // Assertions for design verification
+    `ifdef simulation
     // Synthesis-time parameter validation
     initial begin
         if (DEPTH == 0 || (DEPTH & (DEPTH-1)) != 0) begin
@@ -137,5 +139,5 @@ module sync_fifo #(
         $info("Sync FIFO instantiated: WIDTH=%0d, DEPTH=%0d, ADDR_WIDTH=%0d", 
               WIDTH, DEPTH, ADDR_WIDTH);
     end
-
+    `endif
 endmodule

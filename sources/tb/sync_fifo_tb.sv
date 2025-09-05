@@ -4,7 +4,7 @@
 
 `timescale 1ns / 1ps
 
-module simple_sync_fifo_tb;
+module sync_fifo_tb;
 
     // Test parameters
     parameter WIDTH = 32;
@@ -56,8 +56,8 @@ module simple_sync_fifo_tb;
     
     // Waveform dump
     initial begin
-        $dumpfile("sim/waves/simple_sync_fifo_tb.vcd");
-        $dumpvars(0, simple_sync_fifo_tb);
+        $dumpfile("sim/waves/sync_fifo_tb.vcd");
+        $dumpvars(0, sync_fifo_tb);
     end
     
     // Main test sequence
@@ -93,10 +93,9 @@ module simple_sync_fifo_tb;
             write_data(test_data);
         end
         
-    	expected_data = 32'hDEADBEE0;
         for (i = 0; i < 8; i = i + 1) begin
-            read_and_check(expected_data);
             expected_data = 32'hDEADBEE0 + i;
+            read_and_check(expected_data);
         end
         
         // Test 2: Fill FIFO completely
@@ -105,15 +104,16 @@ module simple_sync_fifo_tb;
             test_data = 32'hCAFE0000 + i;
             write_data(test_data);
         end
+        @(posedge clk);
+        
         check_result(full == 1, "FIFO should be full");
         check_result(count == DEPTH, "Count should equal DEPTH when full");
         
         // Test 3: Empty FIFO completely
         $display("\n--- Test 3: Empty FIFO Completely ---");
-            expected_data = 32'hCAFE0000;
         for (i = 0; i < DEPTH; i = i + 1) begin
-            read_and_check(expected_data);
             expected_data = 32'hCAFE0000 + i;
+            read_and_check(expected_data);
         end
         check_result(empty == 1, "FIFO should be empty");
         check_result(count == 0, "Count should be zero when empty");
@@ -193,10 +193,9 @@ module simple_sync_fifo_tb;
         rd_en = 1;
         @(posedge clk);  // Data becomes valid at this edge
         rd_en = 0;
+        @(posedge clk);  // Data becomes valid at this edge
         check_result(rd_data == expected, 
             $sformatf("Read data: Expected 0x%h, Got 0x%h", expected, rd_data));
-        @(posedge clk);  // Data becomes valid at this edge
-        @(posedge clk);  // Data becomes valid at this edge
     endtask
     
     task check_result(input condition, input string message);
