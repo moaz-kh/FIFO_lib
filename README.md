@@ -2,9 +2,9 @@
 
 A comprehensive SystemVerilog FIFO library with full FPGA implementation flow - from RTL design to ready-to-program bitstream.
 
-## 🎯 Current Status: **PRODUCTION READY**
+## 🎯 Current Status: **SYNC FIFO PRODUCTION READY | MULTI-FIFO IMPLEMENTATION**
 
-### ✅ Synchronous FIFO - Complete Implementation
+### ✅ Synchronous FIFO - Production Ready
 - **Design**: `sources/rtl/sync_fifo.sv`
 - **Configuration**: WIDTH=8, DEPTH=16 (parameterizable)
 - **Architecture**: 
@@ -14,16 +14,22 @@ A comprehensive SystemVerilog FIFO library with full FPGA implementation flow - 
   - Built-in overflow/underflow protection
   - Block RAM utilization for efficient FPGA mapping
 
-### ✅ Comprehensive Verification
-- **Testbench**: `sources/tb/simple_sync_fifo_tb.sv`
-- **Results**: **100% PASS** (46/46 tests) 🎉
-- **Coverage**: 
-  - Basic read/write operations
-  - Full/empty boundary conditions
-  - Simultaneous read/write operations
-  - Random stress testing
-  - Edge case validation
-- **Self-checking** with automated pass/fail reporting
+### ⚠️ Multi-Module Implementation Status
+
+#### ✅ **Sync FIFO - Production Ready**
+- **Simulation**: **100% PASS** (46/46 tests) 🎉
+- **FPGA**: **Complete** - 78.06 MHz, 104KB bitstream ✅
+- **Resources**: 70 LCs (1%), 1 BRAM (3%), 27 IOs (28%)
+
+#### ⚠️ **FWFT FIFO - Hardware Ready, Functional Issues**  
+- **Simulation**: **56% SUCCESS** (28/50 tests) - Data sequencing issues
+- **FPGA**: **Complete** - 54.68 MHz, 102KB bitstream ✅
+- **Resources**: 284 LCs (5%), 0 BRAMs (0%), 27 IOs (28%)
+
+#### ⚠️ **Async FIFO - Advanced Implementation, Debug Needed**
+- **Simulation**: **10.7% accuracy** (42/393 matches) - Full flag timing bug
+- **FPGA**: **Complete** - 70.89/54.36 MHz dual-clock, 102KB bitstream ✅
+- **Resources**: 92 LCs (1%), 1 BRAM (3%), 34 IOs (35%)
 
 ### ✅ Complete FPGA Implementation
 - **Target**: Lattice iCE40 UP5K (SG48 package)
@@ -49,7 +55,7 @@ sudo apt install iverilog gtkwave yosys nextpnr-ice40 fpga-icestorm
 # https://github.com/YosysHQ/oss-cad-suite-build
 ```
 
-### Quick Test
+### Quick Test - Synchronous FIFO (Production Ready)
 ```bash
 # Clone repository
 git clone https://github.com/moaz-kh/FIFO_lib.git
@@ -58,19 +64,35 @@ cd FIFO_lib
 # Check available tools
 make check-tools
 
-# Run simulation (100% pass expected)
-make sim TOP_MODULE=sync_fifo TESTBENCH=simple_sync_fifo_tb
+# Run sync FIFO simulation (100% pass expected)
+make sim TOP_MODULE=sync_fifo TESTBENCH=sync_fifo_tb
 
 # View waveforms
-make waves TOP_MODULE=sync_fifo TESTBENCH=simple_sync_fifo_tb
+make waves TOP_MODULE=sync_fifo TESTBENCH=sync_fifo_tb
+```
+
+### Test Other FIFO Types
+```bash
+# Test FWFT FIFO (56% pass - functional issues)
+make sim TOP_MODULE=fwft_fifo TESTBENCH=fwft_fifo_tb
+
+# Test Async FIFO (10.7% accuracy - debugging needed)
+make sim TOP_MODULE=async_fifo TESTBENCH=async_fifo_tb
+
+# View debug waveforms
+make waves TOP_MODULE=async_fifo TESTBENCH=async_fifo_tb
 ```
 
 ### Complete FPGA Flow
 ```bash
-# Full implementation flow
+# Production ready - Sync FIFO
 make ice40 TOP_MODULE=sync_fifo
 
-# Individual steps
+# All modules synthesize successfully (with functional issues)
+make ice40 TOP_MODULE=fwft_fifo         # FWFT FIFO
+make ice40 TOP_MODULE=async_fifo        # Async FIFO
+
+# Individual steps (works for all modules)
 make synth-ice40 TOP_MODULE=sync_fifo    # Synthesis
 make pnr-ice40 TOP_MODULE=sync_fifo      # Place & Route  
 make timing-ice40 TOP_MODULE=sync_fifo   # Timing Analysis
@@ -82,10 +104,16 @@ make bitstream-ice40 TOP_MODULE=sync_fifo # Bitstream
 FIFO_lib/
 ├── sources/
 │   ├── rtl/
-│   │   ├── sync_fifo.sv           # Synchronous FIFO implementation
-│   │   └── STD_MODULES.v          # Standard utility modules
+│   │   ├── sync_fifo.sv           # Synchronous FIFO ✅
+│   │   ├── fwft_fifo.sv           # First-Word Fall-Through FIFO ⚠️
+│   │   ├── async_fifo.sv          # Asynchronous FIFO ⚠️
+│   │   └── STD_MODULES.v          # Standard utility modules (includes synchronizer)
 │   ├── tb/
-│   │   └── simple_sync_fifo_tb.sv # Comprehensive testbench
+│   │   ├── sync_fifo_tb.sv        # Sync FIFO testbench ✅
+│   │   ├── fwft_fifo_tb.sv        # FWFT FIFO testbench ⚠️
+│   │   └── async_fifo_tb.sv       # Async FIFO testbench ⚠️
+│   ├── include/
+│   │   └── async_fifo_defines.sv  # Async FIFO configuration macros
 │   ├── constraints/               # FPGA constraint files (.pcf)
 │   └── rtl_list.f                 # Auto-generated file list
 ├── sim/
@@ -101,28 +129,48 @@ FIFO_lib/
 
 ## Usage
 
-### FIFO Instantiation
+### Synchronous FIFO (Production Ready) ✅
 ```systemverilog
 sync_fifo #(
     .WIDTH(8),      // Data width (8, 16, 32, etc.)
     .DEPTH(16)      // FIFO depth (must be power of 2)
-) fifo_inst (
-    // Clock and reset
-    .clk(clk),
-    .rst_n(rst_n),
-    
-    // Write interface
-    .wr_en(wr_en),
-    .wr_data(wr_data),
-    .full(full),
-    
-    // Read interface (1 cycle latency)
-    .rd_en(rd_en),
-    .rd_data(rd_data),
-    .empty(empty),
-    
-    // Status
+) sync_inst (
+    .clk(clk), .rst_n(rst_n),
+    .wr_en(wr_en), .wr_data(wr_data), .full(full),
+    .rd_en(rd_en), .rd_data(rd_data), .empty(empty),
     .count(count)   // Current occupancy
+);
+```
+
+### First-Word Fall-Through FIFO (Functional Issues) ⚠️
+```systemverilog
+fwft_fifo #(
+    .WIDTH(8), .DEPTH(16)
+) fwft_inst (
+    .clk(clk), .rst_n(rst_n),
+    .wr_en(wr_en), .wr_data(wr_data), .full(full),
+    .rd_en(rd_en), .rd_data(rd_data), .empty(empty),  // 0-cycle latency
+    .count(count)
+);
+```
+
+### Asynchronous FIFO (Debug Phase) ⚠️
+```systemverilog
+`include "sources/include/async_fifo_defines.sv"
+
+async_fifo #(
+    .WIDTH(8), .DEPTH(16)
+) async_inst (
+    // Write domain
+    .wr_clk(wr_clk), .wr_rst_n(wr_rst_n),
+    .wr_en(wr_en), .wr_data(wr_data), .full(full),
+    
+    // Read domain  
+    .rd_clk(rd_clk), .rd_rst_n(rd_rst_n),
+    .rd_en(rd_en), .rd_data(rd_data), .empty(empty),
+    
+    // Status (optional)
+    .wr_count(wr_count), .rd_count(rd_count)
 );
 ```
 
