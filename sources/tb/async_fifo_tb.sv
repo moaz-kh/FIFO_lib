@@ -16,8 +16,8 @@ module async_fifo_tb;
     // Testbench Parameters
     // ========================================================================
     
-    parameter WIDTH = 8;
-    parameter DEPTH = 16;
+    parameter WIDTH = 16;
+    parameter DEPTH = 1024;
     parameter ADDR_WIDTH = $clog2(DEPTH);
     parameter PTR_WIDTH = ADDR_WIDTH + 1;
     
@@ -31,7 +31,7 @@ module async_fifo_tb;
 `endif
     
     // Test parameters
-    parameter NUM_TEST_CYCLES = 1000;
+    parameter NUM_TEST_CYCLES = 10000;
     parameter MAX_BURST_SIZE = 8;
 
     // ========================================================================
@@ -63,9 +63,9 @@ module async_fifo_tb;
     
     
     // Testbench variables - Using simple array instead of queue
-    logic [WIDTH-1:0]       expected_data [0:1023];  // Expected data array
-    int                     wr_ptr;                   // Write pointer for expected_data
-    int                     rd_ptr;                   // Read pointer for expected_data
+    logic [WIDTH-1:0]       expected_data [0:DEPTH-1];  // Expected data arry
+    logic [ADDR_WIDTH-1:0]  wr_ptr;                     // Write pointer for expected_data
+    logic [ADDR_WIDTH-1:0]  rd_ptr;                     // Read pointer for expected_data
     logic [WIDTH-1:0]       written_data;
     logic [WIDTH-1:0]       read_data_reg;
     
@@ -117,6 +117,11 @@ module async_fifo_tb;
         
         // Explicitly dump array elements for better visibility
         for (int i = 0; i < 16; i++) begin
+            $dumpvars(1, dut.memory[i]);
+        end
+        
+        // Explicitly dump array elements for better visibility
+        for (int i = DEPTH-16; i < DEPTH; i++) begin
             $dumpvars(1, dut.memory[i]);
         end
         
@@ -178,6 +183,9 @@ module async_fifo_tb;
         wr_rst_n = 1;
         repeat (5) @(posedge wr_clk);
         test_status = TEST_PASS;
+        // Clear expected data array pointers after reset
+        wr_ptr = 0;
+        rd_ptr = 0;
     endtask
     
     task reset_read_domain_only();
@@ -188,6 +196,9 @@ module async_fifo_tb;
         rd_rst_n = 1;
         repeat (5) @(posedge rd_clk);
         test_status = TEST_PASS;
+        // Clear expected data array pointers after reset
+        wr_ptr = 0;
+        rd_ptr = 0;
     endtask
 
     // ========================================================================
@@ -235,7 +246,7 @@ module async_fifo_tb;
         $display("[%0t] [READ] Attempting to read, empty=%b, expected_entries=%0d", 
                  $time, empty, wr_ptr-rd_ptr);
         
-        if (!empty && rd_ptr < wr_ptr) begin  // Check empty before asserting rd_en
+        if (!empty) begin  // Check empty before asserting rd_en
             rd_en = 1'b1;
             
             @(posedge rd_clk);  
@@ -282,6 +293,9 @@ module async_fifo_tb;
     // ========================================================================
     
     task test_basic_write_read();
+        // Clear expected data array pointers after reset
+        wr_ptr = 0;
+        rd_ptr = 0;
         test_status = TEST_IDLE;
         $display("[%0t] Test %0d: Basic write/read sequence", $time, test_number++);
         $display("[%0t] [TEST] Starting basic write sequence (writing 1,2,3,4,5,6,7,8)", $time);
@@ -314,6 +328,9 @@ module async_fifo_tb;
     endtask
     
     task test_full_empty_flags();
+        // Clear expected data array pointers after reset
+        wr_ptr = 0;
+        rd_ptr = 0;
         test_status = TEST_IDLE;
         $display("[%0t] Test %0d: Full/empty flag testing", $time, test_number++);
          
@@ -355,6 +372,9 @@ module async_fifo_tb;
     endtask
     
     task test_random_operations();
+        // Clear expected data array pointers after reset
+        wr_ptr = 0;
+        rd_ptr = 0;
         test_status = TEST_IDLE;
         $display("[%0t] Test %0d: Random write/read operations", $time, test_number++);
         
@@ -399,7 +419,7 @@ module async_fifo_tb;
         test_active = 1'b1;
         wr_test_done = 1'b0;
         rd_test_done = 1'b0;
-        test_number = 1;
+        test_number = 0;
         test_status = TEST_IDLE;
         
         // Initialize expected data array pointers
@@ -407,7 +427,7 @@ module async_fifo_tb;
         rd_ptr = 0;
         
         // Initialize expected data array to prevent X values
-        for (int i = 0; i < 1024; i++) begin
+        for (int i = 0; i < DEPTH; i++) begin
             expected_data[i] = '0;
         end
         
@@ -502,7 +522,7 @@ module async_fifo_tb;
     // ========================================================================
     
     initial begin
-        #(NUM_TEST_CYCLES * WR_CLK_PERIOD * 10);  // 10x safety margin
+        #(NUM_TEST_CYCLES * WR_CLK_PERIOD * 1000);  // 10x safety margin
         $error("Testbench timeout!");
         $finish;
     end

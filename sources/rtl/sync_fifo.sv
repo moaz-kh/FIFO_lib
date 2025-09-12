@@ -81,15 +81,8 @@ module sync_fifo #(
     // Read operation - Mode-dependent data path
     generate
         if (FWFT_MODE) begin : gen_fwft_read
-            // FWFT mode: True fall-through with combinational advancement
-            logic [ADDR_WIDTH-1:0] effective_rd_ptr;
-            
-            // Effective read pointer: advances combinationally during read
-            // This makes the next data available immediately when rd_en is asserted
-            assign effective_rd_ptr = (rd_en && !empty) ? (rd_ptr + 1'b1) : rd_ptr;
-            
             // FWFT data output - shows current word, or next word during read
-            assign rd_data = memory[effective_rd_ptr];
+            assign rd_data = memory[rd_ptr];
             
             // Read pointer management - updates on clock edge
             always_ff @(posedge clk) begin
