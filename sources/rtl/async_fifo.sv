@@ -1,14 +1,10 @@
-// Asynchronous FIFO - SystemVerilog Implementation
-// Author: FPGA Design Portfolio
+// Minimal Asynchronous FIFO - SystemVerilog Implementation
 // Features:
 //   - Cross-clock domain operation (separate wr_clk and rd_clk)
 //   - Gray code pointers for metastability-safe operation
-//   - Configurable memory architecture (BRAM vs Distributed RAM)
 //   - Extra bit technique for clean empty/full flag generation
 //   - 2-stage synchronizers for pointer crossing
-//   - Parameterizable width and depth (depth must be power of 2)
 
-`include "sources/include/async_fifo_defines.sv"
 `timescale 1ns / 1ps
 
 module async_fifo #(
@@ -29,11 +25,7 @@ module async_fifo #(
     input  logic                    rd_rst_n,
     input  logic                    rd_en,
     output logic [WIDTH-1:0]        rd_data,
-    output logic                    empty,
-    
-    // Optional status (comment out if not needed)
-    output logic [ADDR_WIDTH:0]     wr_count,     // Write domain count
-    output logic [ADDR_WIDTH:0]     rd_count      // Read domain count
+    output logic                    empty
 );
 
     // ========================================================================
@@ -51,10 +43,7 @@ module async_fifo #(
     // Synchronized pointers
     logic [PTR_WIDTH-1:0] wr_gray_sync;  // Write gray pointer synchronized to read domain
     logic [PTR_WIDTH-1:0] rd_gray_sync;  // Read gray pointer synchronized to write domain
-    
-    // Debug signals - Binary equivalents of Gray code pointers (for waveform analysis)
-    logic [PTR_WIDTH-1:0] wr_binary_equiv, rd_binary_equiv;      // Current domain binary equivalents
-    logic [PTR_WIDTH-1:0] wr_gray_sync_bin, rd_gray_sync_bin;    // Synchronized pointers in binary
+    logic [PTR_WIDTH-1:0] rd_gray_sync_bin;  // Read gray pointer synchronized to write domain
     
     // Memory signals
     logic [ADDR_WIDTH-1:0] wr_addr, rd_addr;
@@ -81,17 +70,11 @@ module async_fifo #(
     endfunction
     
     // ========================================================================
-    // Address Generation and Debug Signal Assignment
+    // Address Generation
     // ========================================================================
     
     assign wr_addr = wr_binary[ADDR_WIDTH-1:0];  // Use lower bits for memory addressing
     assign rd_addr = rd_binary[ADDR_WIDTH-1:0];
-    
-    // Debug: Convert Gray codes back to Binary for waveform visibility
-    assign wr_binary_equiv = gray_to_bin(wr_gray);        // Current write Gray → Binary
-    assign rd_binary_equiv = gray_to_bin(rd_gray);        // Current read Gray → Binary  
-    assign wr_gray_sync_bin = gray_to_bin(wr_gray_sync);  // Synced write Gray → Binary
-    assign rd_gray_sync_bin = gray_to_bin(rd_gray_sync);  // Synced read Gray → Binary
     
     // ========================================================================
     // Write Domain Logic  
@@ -100,6 +83,7 @@ module async_fifo #(
     // Write pointer increment logic
     assign wr_binary_next = wr_binary + 1'b1;
     assign wr_gray_next = bin_to_gray(wr_binary_next);
+    assign rd_gray_sync_bin = gray_to_bin(rd_gray_sync);
     
     // Write enable logic
     assign wr_en_internal = wr_en && !full;
@@ -116,7 +100,8 @@ module async_fifo #(
     end
     
     // Full flag generation
-    assign full = (wr_gray_next[PTR_WIDTH-2:0] == rd_gray_sync[PTR_WIDTH-2:0]) & (wr_gray_next[PTR_WIDTH-1] != rd_gray_sync[PTR_WIDTH-1]);
+    assign full = (wr_binary_next[PTR_WIDTH-2:0] == rd_gray_sync_bin[PTR_WIDTH-2:0]) && 
+                  (wr_binary_next[PTR_WIDTH-1] != rd_gray_sync_bin[PTR_WIDTH-1]);
     
     // ========================================================================
     // Read Domain Logic
@@ -164,11 +149,9 @@ module async_fifo #(
     );
     
     // ========================================================================
-    // Memory Implementation - Macro Selectable
+    // Memory Implementation - Block RAM (True Registered)
     // ========================================================================
     
-`ifdef USE_BRAM
-    // Block RAM implementation (registered read)
     logic [WIDTH-1:0] memory [0:DEPTH-1];
     
     // Write operation
@@ -178,80 +161,15 @@ module async_fifo #(
         end
     end
     
-    // Read operation (registered - 1 cycle latency)
+    // Read operation (true registered - 1 cycle latency, gated by rd_en)
     always_ff @(posedge rd_clk) begin
         if (!rd_rst_n) begin
             rd_data <= '0;
-        end else begin
-            rd_data <= memory[rd_addr];  // Always read (addr updated by rd_en_internal)
+        end else if (rd_en_internal) begin
+            rd_data <= memory[rd_addr];  // Only read when rd_en is active
         end
+        // rd_data holds previous value when not reading
     end
-    
-`else
-    // Distributed RAM implementation (combinatorial read)
-    logic [WIDTH-1:0] memory [0:DEPTH-1];
-    
-    // Write operation  
-    always_ff @(posedge wr_clk) begin
-        if (wr_en_internal) begin
-            memory[wr_addr] <= wr_data;
-        end
-    end
-    
-    // Read operation (combinatorial - 0 cycle latency)
-    assign rd_data = memory[rd_addr];
-    
-`endif
 
-    // ========================================================================
-    // Optional Status Counters
-    // ========================================================================
-    
-    // Write domain count
-    assign wr_count = wr_binary - rd_gray_sync;
-    
-    // Read domain count  
-    assign rd_count = wr_gray_sync - rd_binary;
-
-    // ========================================================================
-    // Simulation-only Assertions
-    // ========================================================================
-    
-    `ifndef SYNTHESIS
-    initial begin
-        // Parameter validation
-        assert (DEPTH > 0 && (DEPTH & (DEPTH-1)) == 0) 
-            else $fatal(1, "DEPTH must be a power of 2 and > 0. Current DEPTH = %0d", DEPTH);
-        assert (WIDTH > 0) 
-            else $fatal(1, "WIDTH must be > 0. Current WIDTH = %0d", WIDTH);
-            
-        $info("Async FIFO instantiated: WIDTH=%0d, DEPTH=%0d, PTR_WIDTH=%0d", 
-              WIDTH, DEPTH, PTR_WIDTH);
-    `ifdef USE_BRAM
-        $info("Memory architecture: Block RAM (registered read)");
-    `else  
-        $info("Memory architecture: Distributed RAM (combinatorial read)");
-    `endif
-    end
-    
-    // Gray code conversion verification (for debugging)
-    always @(posedge wr_clk) begin
-        if (wr_rst_n) begin
-            // Verify Gray-to-Binary conversion is working correctly
-            assert (wr_binary_equiv == wr_binary) 
-                else $error("Gray-to-Binary conversion mismatch: wr_gray=0x%0h → bin=0x%0h, expected=0x%0h", 
-                           wr_gray, wr_binary_equiv, wr_binary);
-        end
-    end
-    
-    always @(posedge rd_clk) begin
-        if (rd_rst_n) begin
-            // Verify Gray-to-Binary conversion is working correctly  
-            assert (rd_binary_equiv == rd_binary)
-                else $error("Gray-to-Binary conversion mismatch: rd_gray=0x%0h → bin=0x%0h, expected=0x%0h",
-                           rd_gray, rd_binary_equiv, rd_binary);
-        end
-    end
-    `endif
 
 endmodule

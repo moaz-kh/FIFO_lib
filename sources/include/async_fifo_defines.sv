@@ -5,10 +5,10 @@
 `define ASYNC_FIFO_DEFINES_SV
 
 // Memory architecture selection
-`define USE_BRAM  // Comment out to use distributed RAM
+//`define USE_BRAM  // Comment out to use distributed RAM
 
 // Testbench configuration  
-`define SAME_FREQ_CLOCKS  // Comment out for different frequency clocks
+//`define SAME_FREQ_CLOCKS  // Comment out for different frequency clocks
 
 // Simulation features - Now controlled automatically by Makefile
 // - 'make sim' targets: SIMULATION enabled via -D SIMULATION  

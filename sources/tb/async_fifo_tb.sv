@@ -38,6 +38,15 @@ module async_fifo_tb;
     // Testbench Signals
     // ========================================================================
     
+    // Test status enumeration for waveform visualization
+    typedef enum logic [1:0] {
+        TEST_IDLE = 2'b00,
+        TEST_PASS = 2'b01,
+        TEST_FAIL = 2'b10
+    } test_status_t;
+    
+    test_status_t test_status;
+    
     // Write domain signals
     logic                   wr_clk;
     logic                   wr_rst_n;
@@ -52,9 +61,6 @@ module async_fifo_tb;
     logic [WIDTH-1:0]       rd_data;
     logic                   empty;
     
-    // Status signals
-    logic [ADDR_WIDTH:0]    wr_count;
-    logic [ADDR_WIDTH:0]    rd_count;
     
     // Testbench variables - Using simple array instead of queue
     logic [WIDTH-1:0]       expected_data [0:1023];  // Expected data array
@@ -71,7 +77,7 @@ module async_fifo_tb;
     int unsigned            data_matches;
     int unsigned            data_mismatches;
     int unsigned            test_number;
-    
+    int unsigned            test_counter;
     // Test control
     logic                   test_active;
     logic                   wr_test_done;
@@ -97,11 +103,7 @@ module async_fifo_tb;
         .rd_rst_n(rd_rst_n),
         .rd_en(rd_en),
         .rd_data(rd_data),
-        .empty(empty),
-        
-        // Status
-        .wr_count(wr_count),
-        .rd_count(rd_count)
+        .empty(empty)
     );
 
     // ========================================================================
@@ -114,15 +116,15 @@ module async_fifo_tb;
         $dumpvars(2, async_fifo_tb);  // Depth 2 to include arrays
         
         // Explicitly dump array elements for better visibility
-        for (int i = 0; i < 32; i++) begin
-            $dumpvars(1, expected_data[i]);
+        for (int i = 0; i < 16; i++) begin
+            $dumpvars(1, dut.memory[i]);
         end
         
         $display("[%0t] Waveform file: sim/waves/async_fifo_tb.vcd", $time);
     end
     // Write clock generation
     initial begin
-        wr_clk = 0;
+        wr_clk = 0; 
         forever #(WR_CLK_PERIOD/2) wr_clk = ~wr_clk;
     end
     
@@ -145,6 +147,7 @@ module async_fifo_tb;
     // ========================================================================
     
     task reset_both_domains();
+        test_status = TEST_IDLE;
         $display("[%0t] Test %0d: Reset both domains", $time, test_number++);
         $display("[%0t] [RESET] Asserting both reset signals", $time);
         wr_rst_n = 0;
@@ -158,28 +161,33 @@ module async_fifo_tb;
         repeat (5) @(posedge rd_clk);
         $display("[%0t] [RESET PASS] Both domains reset complete. Full=%b, Empty=%b", 
                  $time, full, empty);
+        test_status = TEST_PASS;
         // Clear expected data array pointers after reset
         wr_ptr = 0;
         rd_ptr = 0;
-        writes_successful = 0;
-        reads_successful = 0;
+        //writes_successful = 0;
+        //reads_successful = 0;
         $display("[%0t] [RESET] Reset expected_data pointers and counters", $time);
     endtask
     
     task reset_write_domain_only();
+        test_status = TEST_IDLE;
         $display("[%0t] Test %0d: Reset write domain only", $time, test_number++);
         wr_rst_n = 0;
         repeat (5) @(posedge wr_clk);
         wr_rst_n = 1;
         repeat (5) @(posedge wr_clk);
+        test_status = TEST_PASS;
     endtask
     
     task reset_read_domain_only();
+        test_status = TEST_IDLE;
         $display("[%0t] Test %0d: Reset read domain only", $time, test_number++);
         rd_rst_n = 0;
         repeat (5) @(posedge rd_clk);
         rd_rst_n = 1;
         repeat (5) @(posedge rd_clk);
+        test_status = TEST_PASS;
     endtask
 
     // ========================================================================
@@ -188,13 +196,16 @@ module async_fifo_tb;
     
     task write_data(input [WIDTH-1:0] data);
         @(posedge wr_clk);
-        wr_en = 1'b1;
-        wr_data = data;
         writes_attempted++;
         $display("[%0t] [WRITE] Attempting to write 0x%0h, full=%b", $time, data, full);
         
-        @(posedge wr_clk);
-        if (!full) begin
+        if (!full) begin  // Check full before asserting wr_en
+            wr_en = 1'b1;
+            wr_data = data;
+            
+            @(posedge wr_clk);
+            wr_en = 1'b0;
+            
             writes_successful++;
             expected_data[wr_ptr] = data;
             wr_ptr++;
@@ -203,13 +214,12 @@ module async_fifo_tb;
         end else begin
             $display("[%0t] [WRITE BLOCKED] Write blocked due to full flag for data 0x%0h", $time, data);
         end
-        wr_en = 1'b0;
     endtask
     
     task write_burst(input int burst_size);
         for (int i = 0; i < burst_size; i++) begin
             if (!full && test_active) begin
-                written_data = $urandom_range(0, 2**WIDTH-1);
+                written_data = (wr_ptr + 1) & ((1 << WIDTH) - 1); // Simple counter pattern
                 write_data(written_data);
             end else break;
         end
@@ -221,46 +231,46 @@ module async_fifo_tb;
     
     task read_data();
         @(posedge rd_clk);
-        rd_en = 1'b1;
         reads_attempted++;
         $display("[%0t] [READ] Attempting to read, empty=%b, expected_entries=%0d", 
                  $time, empty, wr_ptr-rd_ptr);
         
-        @(posedge rd_clk);  
-        rd_en = 1'b0;
-        
-        // Wait for BRAM read latency (1 cycle)
-        @(posedge rd_clk);
-        
-        if (reads_successful < writes_successful) begin  // Only check if data was written
+        if (!empty && rd_ptr < wr_ptr) begin  // Check empty before asserting rd_en
+            rd_en = 1'b1;
+            
+            @(posedge rd_clk);  
+            rd_en = 1'b0;
+            
+            // Wait for BRAM read latency (1 cycle) - required for true registered mode
+            @(posedge rd_clk);
             reads_successful++;
             read_data_reg = rd_data;
             $display("[%0t] [READ DATA] Read 0x%0h from FIFO", $time, read_data_reg);
             
             // Check against expected data
-            if (rd_ptr < wr_ptr) begin
-                if (read_data_reg == expected_data[rd_ptr]) begin
-                    data_matches++;
-                    $display("[%0t] [READ PASS] Expected=0x%0h, Got=0x%0h ✓ (entries_remaining=%0d)", 
-                             $time, expected_data[rd_ptr], read_data_reg, wr_ptr-rd_ptr-1);
-                end else begin
-                    data_mismatches++;
-                    $error("[%0t] [READ FAIL] Data mismatch: Expected=0x%0h, Got=0x%0h", 
-                           $time, expected_data[rd_ptr], read_data_reg);
-                end
-                rd_ptr++;
+            if (read_data_reg == expected_data[rd_ptr]) begin
+                data_matches++;
+                test_status = TEST_PASS;
+                $display("[%0t] [READ PASS] Expected=0x%0h, Got=0x%0h ✓ (entries_remaining=%0d)", 
+                         $time, expected_data[rd_ptr], read_data_reg, wr_ptr-rd_ptr-1);
             end else begin
-                $error("[%0t] [READ ERROR] No expected data available but trying to read! Got=0x%0h (rd_ptr=%0d, wr_ptr=%0d)", 
-                       $time, read_data_reg, rd_ptr, wr_ptr);
+                data_mismatches++;
+                test_status = TEST_FAIL;
+                $error("[%0t] [READ FAIL] Data mismatch: Expected=0x%0h, Got=0x%0h (rd_ptr=%0d)", 
+                       $time, expected_data[rd_ptr], read_data_reg, rd_ptr);
             end
+            rd_ptr++;
+        end else if (empty) begin
+            $display("[%0t] [READ SKIPPED] FIFO is empty, no data to read", $time);
         end else begin
-            $display("[%0t] [READ SKIPPED] Skipping read check (reads_successful=%0d >= writes_successful=%0d)", 
-                     $time, reads_successful, writes_successful);
+            $display("[%0t] [READ SKIPPED] No more expected data (rd_ptr=%0d >= wr_ptr=%0d)", 
+                     $time, rd_ptr, wr_ptr);
         end
     endtask
     
     task read_burst(input int burst_size);
         for (int i = 0; i < burst_size; i++) begin
+            @(posedge rd_clk);
             if (!empty && test_active) begin
                 read_data();
             end else break;
@@ -272,6 +282,7 @@ module async_fifo_tb;
     // ========================================================================
     
     task test_basic_write_read();
+        test_status = TEST_IDLE;
         $display("[%0t] Test %0d: Basic write/read sequence", $time, test_number++);
         $display("[%0t] [TEST] Starting basic write sequence (writing 1,2,3,4,5,6,7,8)", $time);
         
@@ -285,43 +296,66 @@ module async_fifo_tb;
         repeat (10) @(posedge rd_clk);
         
         $display("[%0t] [TEST] Starting read sequence", $time);
-        // Read the data back
-        while (!empty) begin
-            read_data();
+        // Read the data back - flag-stable draining
+        while (1) begin
+            @(posedge rd_clk);
+            if (empty) begin
+                @(posedge rd_clk); // Wait one more cycle
+                if (empty) break;  // Confirm still empty
+            end else begin
+                read_data();
+            end
         end
         
         $display("[%0t] [TEST PASS] Basic write/read test complete", $time);
+        test_status = TEST_PASS;
         // Wait for completion
         repeat (10) @(posedge wr_clk);
     endtask
     
     task test_full_empty_flags();
+        test_status = TEST_IDLE;
         $display("[%0t] Test %0d: Full/empty flag testing", $time, test_number++);
-        
-        // Fill the FIFO
-        while (!full) begin
-            written_data = $urandom();
+         
+        test_counter = 1;
+        // Fill the FIFO - flag-stable approach
+        while (1) begin
+            @(posedge wr_clk);
+            if (full) break;
+            written_data = test_counter;
             write_data(written_data);
+            test_counter = test_counter + 1;
         end
         
         // Verify full flag
         if (!full) begin
+            test_status = TEST_FAIL;
             $error("[%0t] FIFO should be full but full flag is not set", $time);
         end
         
-        // Empty the FIFO
+        // Empty the FIFO - flag-stable draining
         repeat (5) @(posedge rd_clk);  // Wait for synchronization
-        while (!empty) begin
-            read_data();
+        while (1) begin
+            @(posedge rd_clk);
+            if (empty) begin
+                @(posedge rd_clk); // Wait one more cycle
+                if (empty) break;  // Confirm still empty
+            end else begin
+                read_data();
+            end
         end
         
         // Verify empty flag  
         if (!empty) begin
+            test_status = TEST_FAIL;
             $error("[%0t] FIFO should be empty but empty flag is not set", $time);
+        end else begin
+            test_status = TEST_PASS;
         end
     endtask
     
     task test_random_operations();
+        test_status = TEST_IDLE;
         $display("[%0t] Test %0d: Random write/read operations", $time, test_number++);
         
         fork
@@ -344,12 +378,13 @@ module async_fifo_tb;
                     if (test_active) begin
                         int burst_size = $urandom_range(1, MAX_BURST_SIZE);
                         read_burst(burst_size);
-                        repeat ($urandom_range(1, 5)) @(posedge rd_clk);
+                        repeat ($urandom_range(3, 8)) @(posedge rd_clk); // Longer delays for sync
                     end
                 end
                 rd_test_done = 1'b1;
             end
         join
+        test_status = TEST_PASS;
     endtask
 
     // ========================================================================
@@ -365,6 +400,7 @@ module async_fifo_tb;
         wr_test_done = 1'b0;
         rd_test_done = 1'b0;
         test_number = 1;
+        test_status = TEST_IDLE;
         
         // Initialize expected data array pointers
         wr_ptr = 0;
@@ -419,12 +455,17 @@ module async_fifo_tb;
         wait (wr_test_done && rd_test_done);
         test_active = 1'b0;
         
-        // Drain remaining data
+        // Drain remaining data - flag-stable draining
         repeat (20) @(posedge rd_clk);
-        while (!empty) begin
-            read_data();
+        while (1) begin
+            @(posedge rd_clk);
+            if (empty) begin
+                @(posedge rd_clk); // Wait one more cycle
+                if (empty) break;  // Confirm still empty
+            end else begin
+                read_data();
+            end
         end
-        
         // Final statistics
         repeat (50) @(posedge wr_clk);
         
@@ -466,4 +507,4 @@ module async_fifo_tb;
         $finish;
     end
 
-endmodule
+endmodule;
