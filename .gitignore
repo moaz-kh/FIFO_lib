@@ -7,6 +7,7 @@ sim/waves/*.fst
 sim/waves/*.lxt*
 sim/waves/*.ghw
 sim/logs/*.log
+sim/waves/*.gtkw
 
 # Synthesis outputs (Yosys)
 backend/synth/*.json

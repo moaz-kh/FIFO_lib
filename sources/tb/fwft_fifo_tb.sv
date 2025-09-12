@@ -33,10 +33,11 @@ module fwft_fifo_tb;
     int                     fail_count;
     int                     i;
     
-    // DUT instantiation
-    fwft_fifo #(
+    // DUT instantiation - Using unified sync_fifo with FWFT_MODE=1
+    sync_fifo #(
         .WIDTH(WIDTH),
-        .DEPTH(DEPTH)
+        .DEPTH(DEPTH),
+        .FWFT_MODE(1)
     ) dut (
         .clk(clk),
         .rst_n(rst_n),
@@ -109,6 +110,7 @@ module fwft_fifo_tb;
         rd_en = 1;
         @(posedge clk);
         rd_en = 0;
+        @(posedge clk);
         check_result(empty == 1, "FWFT: Should be empty after reading single word");
         
         // Test 2: Multiple word FWFT behavior
@@ -141,6 +143,7 @@ module fwft_fifo_tb;
             @(posedge clk);
             rd_en = 0;
         end
+            @(posedge clk);
         
         check_result(empty == 1, "Should be empty after reading all words");
         
@@ -176,6 +179,7 @@ module fwft_fifo_tb;
             @(posedge clk);
             rd_en = 0;
         end
+            @(posedge clk);
         check_result(empty == 1, "FWFT: Should be empty");
         check_result(count == 0, "FWFT: Count should be zero when empty");
         

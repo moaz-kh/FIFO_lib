@@ -1,18 +1,22 @@
-// Synchronous FIFO - SystemVerilog Implementation
+// Unified Synchronous/FWFT FIFO - SystemVerilog Implementation
 // Author: FPGA Design Portfolio
 // Features:
+//   - Dual-mode operation: Synchronous (1-cycle latency) or FWFT (zero latency)
 //   - Parameterizable width and depth (depth must be power of 2)
 //   - Full/empty flag generation
 //   - Count output for occupancy monitoring
 //   - Proper reset handling
 //   - Industry-standard interface
-//   - SystemVerilog enhanced syntax
+//   - SystemVerilog enhanced syntax with generate blocks
+//   - FWFT_MODE=0: Traditional sync FIFO with registered read (default)
+//   - FWFT_MODE=1: First Word Fall Through with combinational read
 
 `timescale 1ns / 1ps
 
 module sync_fifo #(
     parameter WIDTH = 8,            // Data width in bits  
     parameter DEPTH = 16,           // FIFO depth (must be power of 2)
+    parameter FWFT_MODE = 0,        // 0=Synchronous read (1-cycle latency), 1=FWFT read (zero latency)
     parameter ADDR_WIDTH = $clog2(DEPTH)  // Address width automatically calculated
 )(
     // Clock and reset
@@ -57,8 +61,11 @@ module sync_fifo #(
     initial begin
         wr_ptr = '0;
         rd_ptr = '0;
-        rd_data = '0;
         fifo_count = '0;
+        // Only initialize rd_data for sync mode (FWFT uses combinational assignment)
+        if (!FWFT_MODE) begin
+            rd_data = '0;
+        end
     end
     
     // Write operation
@@ -71,16 +78,40 @@ module sync_fifo #(
         end
     end
     
-    // Read operation
-    always_ff @(posedge clk) begin
-        if (!rst_n) begin
-            rd_ptr <= '0;
-            rd_data <= '0;
-        end else if (rd_en_int) begin
-            rd_data <= memory[rd_ptr];
-            rd_ptr <= rd_ptr + 1'b1;
+    // Read operation - Mode-dependent data path
+    generate
+        if (FWFT_MODE) begin : gen_fwft_read
+            // FWFT mode: True fall-through with combinational advancement
+            logic [ADDR_WIDTH-1:0] effective_rd_ptr;
+            
+            // Effective read pointer: advances combinationally during read
+            // This makes the next data available immediately when rd_en is asserted
+            assign effective_rd_ptr = (rd_en && !empty) ? (rd_ptr + 1'b1) : rd_ptr;
+            
+            // FWFT data output - shows current word, or next word during read
+            assign rd_data = memory[effective_rd_ptr];
+            
+            // Read pointer management - updates on clock edge
+            always_ff @(posedge clk) begin
+                if (!rst_n) begin
+                    rd_ptr <= '0;
+                end else if (rd_en_int) begin
+                    rd_ptr <= rd_ptr + 1'b1;
+                end
+            end
+        end else begin : gen_sync_read
+            // Sync mode: Registered read data path (1-cycle latency)
+            always_ff @(posedge clk) begin
+                if (!rst_n) begin
+                    rd_ptr <= '0;
+                    rd_data <= '0;
+                end else if (rd_en_int) begin
+                    rd_data <= memory[rd_ptr];
+                    rd_ptr <= rd_ptr + 1'b1;
+                end
+            end
         end
-    end
+    endgenerate
     
     // Count management
     always_ff @(posedge clk) begin

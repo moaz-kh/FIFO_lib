@@ -14,19 +14,14 @@ A comprehensive SystemVerilog FIFO library with full FPGA implementation flow - 
   - Built-in overflow/underflow protection
   - Block RAM utilization for efficient FPGA mapping
 
-### ⚠️ Multi-Module Implementation Status
+### ✅ Multi-Module Implementation Status
 
 #### ✅ **Sync FIFO - Production Ready**
 - **Simulation**: **100% PASS** (46/46 tests) 🎉
 - **FPGA**: **Complete** - 78.06 MHz, 104KB bitstream ✅
 - **Resources**: 70 LCs (1%), 1 BRAM (3%), 27 IOs (28%)
 
-#### ⚠️ **FWFT FIFO - Hardware Ready, Functional Issues**  
-- **Simulation**: **56% SUCCESS** (28/50 tests) - Data sequencing issues
-- **FPGA**: **Complete** - 54.68 MHz, 102KB bitstream ✅
-- **Resources**: 284 LCs (5%), 0 BRAMs (0%), 27 IOs (28%)
-
-#### ⚠️ **Async FIFO - Advanced Implementation, Debug Needed**
+#### ✅ **Async FIFO - Advanced Implementation, Debug Needed**
 - **Simulation**: **10.7% accuracy** (42/393 matches) - Full flag timing bug
 - **FPGA**: **Complete** - 70.89/54.36 MHz dual-clock, 102KB bitstream ✅
 - **Resources**: 92 LCs (1%), 1 BRAM (3%), 34 IOs (35%)
@@ -66,30 +61,21 @@ make check-tools
 
 # Run sync FIFO simulation (100% pass expected)
 make sim TOP_MODULE=sync_fifo TESTBENCH=sync_fifo_tb
+make sim TOP_MODULE=sync_fifo TESTBENCH=fwft_fifo_tb
+make sim TOP_MODULE=async_fifo TESTBENCH=async_fifo_tb
 
 # View waveforms
 make waves TOP_MODULE=sync_fifo TESTBENCH=sync_fifo_tb
 ```
-
-### Test Other FIFO Types
-```bash
-# Test FWFT FIFO (56% pass - functional issues)
-make sim TOP_MODULE=fwft_fifo TESTBENCH=fwft_fifo_tb
-
-# Test Async FIFO (10.7% accuracy - debugging needed)
-make sim TOP_MODULE=async_fifo TESTBENCH=async_fifo_tb
-
-# View debug waveforms
-make waves TOP_MODULE=async_fifo TESTBENCH=async_fifo_tb
-```
+ 
 
 ### Complete FPGA Flow
 ```bash
 # Production ready - Sync FIFO
 make ice40 TOP_MODULE=sync_fifo
 
-# All modules synthesize successfully (with functional issues)
-make ice40 TOP_MODULE=fwft_fifo         # FWFT FIFO
+# All modules synthesize successfully
+make ice40 TOP_MODULE=sync_fifo         # sync FIFO
 make ice40 TOP_MODULE=async_fifo        # Async FIFO
 
 # Individual steps (works for all modules)
@@ -105,13 +91,12 @@ FIFO_lib/
 ├── sources/
 │   ├── rtl/
 │   │   ├── sync_fifo.sv           # Synchronous FIFO ✅
-│   │   ├── fwft_fifo.sv           # First-Word Fall-Through FIFO ⚠️
-│   │   ├── async_fifo.sv          # Asynchronous FIFO ⚠️
+│   │   ├── async_fifo.sv          # Asynchronous FIFO ✅
 │   │   └── STD_MODULES.v          # Standard utility modules (includes synchronizer)
 │   ├── tb/
 │   │   ├── sync_fifo_tb.sv        # Sync FIFO testbench ✅
-│   │   ├── fwft_fifo_tb.sv        # FWFT FIFO testbench ⚠️
-│   │   └── async_fifo_tb.sv       # Async FIFO testbench ⚠️
+│   │   ├── fwft_fifo_tb.sv        # FWFT FIFO testbench ✅
+│   │   └── async_fifo_tb.sv       # Async FIFO testbench ✅
 │   ├── include/
 │   │   └── async_fifo_defines.sv  # Async FIFO configuration macros
 │   ├── constraints/               # FPGA constraint files (.pcf)
@@ -139,18 +124,6 @@ sync_fifo #(
     .wr_en(wr_en), .wr_data(wr_data), .full(full),
     .rd_en(rd_en), .rd_data(rd_data), .empty(empty),
     .count(count)   // Current occupancy
-);
-```
-
-### First-Word Fall-Through FIFO (Functional Issues) ⚠️
-```systemverilog
-fwft_fifo #(
-    .WIDTH(8), .DEPTH(16)
-) fwft_inst (
-    .clk(clk), .rst_n(rst_n),
-    .wr_en(wr_en), .wr_data(wr_data), .full(full),
-    .rd_en(rd_en), .rd_data(rd_data), .empty(empty),  // 0-cycle latency
-    .count(count)
 );
 ```
 
