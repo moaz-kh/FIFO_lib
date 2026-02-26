@@ -43,7 +43,6 @@ module async_fifo #(
     // Synchronized pointers
     logic [PTR_WIDTH-1:0] wr_gray_sync;  // Write gray pointer synchronized to read domain
     logic [PTR_WIDTH-1:0] rd_gray_sync;  // Read gray pointer synchronized to write domain
-    logic [PTR_WIDTH-1:0] rd_gray_sync_bin;  // Read gray pointer synchronized to write domain
     
     // Memory signals
     logic [ADDR_WIDTH-1:0] wr_addr, rd_addr;
@@ -83,7 +82,6 @@ module async_fifo #(
     // Write pointer increment logic
     assign wr_binary_next = wr_binary + 1'b1;
     assign wr_gray_next = bin_to_gray(wr_binary_next);
-    assign rd_gray_sync_bin = gray_to_bin(rd_gray_sync);
     
     // Write enable logic
     assign wr_en_internal = wr_en && !full;
@@ -99,9 +97,9 @@ module async_fifo #(
         end
     end
     
-    // Full flag generation
-    assign full = (wr_binary_next[PTR_WIDTH-2:0] == rd_gray_sync_bin[PTR_WIDTH-2:0]) && 
-                  (wr_binary_next[PTR_WIDTH-1] != rd_gray_sync_bin[PTR_WIDTH-1]);
+    // Full flag generation (Gray code domain: top 2 MSBs reversed, rest equal)
+    assign full = (wr_gray_next[PTR_WIDTH-1:PTR_WIDTH-2] == ~rd_gray_sync[PTR_WIDTH-1:PTR_WIDTH-2]) &&
+                  (wr_gray_next[PTR_WIDTH-3:0] == rd_gray_sync[PTR_WIDTH-3:0]);
     
     // ========================================================================
     // Read Domain Logic
